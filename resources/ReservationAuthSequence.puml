@@ -1,0 +1,410 @@
+@startuml Auth - Register
+header Authentication Sequence Diagram
+footer Page %page% of %lastpage%
+title "Auth - Register (POST)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:auth" as routerAuth
+participant "<<controllers>>\n:auth" as controllersAuth
+participant "<<model>>\n:User" as modelUser
+database "<<MongoDB>>\n:User" as UserDatabase
+
+client -> server ++: req.post('/api/v1/auth/register')
+server -> routerAuth ++: app.use('/api/v1/auth', auth)
+routerAuth -> controllersAuth ++: register()
+controllersAuth -> modelUser ++: create({ name, tel, email, password, role })
+note right of modelUser: pre-save hook:\nhash password with bcrypt
+modelUser -> UserDatabase ++: UserSchema
+UserDatabase --> modelUser --: user
+controllersAuth <-- modelUser --: user
+controllersAuth -> controllersAuth: sendTokenResponse()\ngetSignedJwtToken()
+controllersAuth -> client --: res.cookie(token) + { success, token }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Auth - Login
+header Authentication Sequence Diagram
+footer Page %page% of %lastpage%
+title "Auth - Login (POST)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:auth" as routerAuth
+participant "<<controllers>>\n:auth" as controllersAuth
+participant "<<model>>\n:User" as modelUser
+database "<<MongoDB>>\n:User" as UserDatabase
+
+client -> server ++: req.post('/api/v1/auth/login')
+server -> routerAuth ++: app.use('/api/v1/auth', auth)
+routerAuth -> controllersAuth ++: login()
+
+alt email or password missing
+    controllersAuth -> client: 400 { success: false }
+end
+
+controllersAuth -> modelUser ++: findOne({ email }).select('+password')
+modelUser -> UserDatabase ++: UserSchema
+UserDatabase --> modelUser --: user
+controllersAuth <-- modelUser --: user
+
+alt user not found
+    controllersAuth -> client: 400 Invalid credentials
+end
+
+controllersAuth -> modelUser: matchPassword(password)
+note right of modelUser: bcrypt.compare()
+
+alt password not match
+    controllersAuth -> client: 401 Invalid credentials
+end
+
+controllersAuth -> controllersAuth --: sendTokenResponse()\ngetSignedJwtToken()
+controllersAuth -> client --: res.cookie(token) + { success, token }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Auth - GetMe
+header Authentication Sequence Diagram
+footer Page %page% of %lastpage%
+title "Auth - GetMe (GET)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:auth" as routerAuth
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:auth" as controllersAuth
+participant "<<model>>\n:User" as modelUser
+database "<<MongoDB>>\n:User" as UserDatabase
+
+client -> server ++: req.get('/api/v1/auth/me')\nAuthorization: Bearer <token>
+server -> routerAuth ++: app.use('/api/v1/auth', auth)
+routerAuth -> middlewareProtect ++: protect()
+note right of middlewareProtect: verify JWT token\nset req.user
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerAuth --: next()
+routerAuth -> controllersAuth ++: getMe()
+controllersAuth -> modelUser ++: findById(req.user.id)
+modelUser -> UserDatabase ++: UserSchema
+UserDatabase --> modelUser --: user
+controllersAuth <-- modelUser --: user
+controllersAuth -> client --: 200 { success, data: user }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Auth - Logout
+header Authentication Sequence Diagram
+footer Page %page% of %lastpage%
+title "Auth - Logout (GET)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:auth" as routerAuth
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:auth" as controllersAuth
+
+client -> server ++: req.get('/api/v1/auth/logout')\nAuthorization: Bearer <token>
+server -> routerAuth ++: app.use('/api/v1/auth', auth)
+routerAuth -> middlewareProtect ++: protect()
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerAuth --: next()
+routerAuth -> controllersAuth ++: logout()
+note right of controllersAuth: set cookie token='none'\nexpires in 10 seconds
+controllersAuth -> client --: 200 { success: true, data: {} }
+
+@enduml
+
+' ═════════════════════════════════════════════════════════════
+'  RESERVATION SEQUENCE DIAGRAMS
+' ═════════════════════════════════════════════════════════════
+
+@startuml Reservation - GetAll
+header Reservation Sequence Diagram
+footer Page %page% of %lastpage%
+title "Reservation - Get All (GET)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:reservations" as routerRes
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:reservations" as controllersRes
+participant "<<model>>\n:Reservation" as modelRes
+database "<<MongoDB>>\n:Reservation" as ResDatabase
+
+client -> server ++: req.get('/api/v1/reservations')\nAuthorization: Bearer <token>
+server -> routerRes ++: app.use('/api/v1/reservations', reservations)
+routerRes -> middlewareProtect ++: protect()
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerRes --: next()
+routerRes -> controllersRes ++: getReservations()
+
+alt user role != 'admin'
+    controllersRes -> modelRes ++: find({ user: req.user.id }).populate(cowork)
+else admin + coworkId param
+    controllersRes -> modelRes: find({ cowork: coworkId }).populate(cowork)
+else admin no param
+    controllersRes -> modelRes: find().populate(cowork)
+end
+
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: reservations
+controllersRes <-- modelRes --: reservations
+controllersRes -> client --: 200 { success, count, data }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Reservation - GetOne
+header Reservation Sequence Diagram
+footer Page %page% of %lastpage%
+title "Reservation - Get One (GET)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:reservations" as routerRes
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:reservations" as controllersRes
+participant "<<model>>\n:Reservation" as modelRes
+database "<<MongoDB>>\n:Reservation" as ResDatabase
+
+client -> server ++: req.get('/api/v1/reservations/:id')\nAuthorization: Bearer <token>
+server -> routerRes ++: app.use('/api/v1/reservations', reservations)
+routerRes -> middlewareProtect ++: protect()
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerRes --: next()
+routerRes -> controllersRes ++: getReservation()
+controllersRes -> modelRes ++: findById(req.params.id).populate(cowork)
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: reservation
+controllersRes <-- modelRes --: reservation
+
+alt reservation not found
+    controllersRes -> client: 404 No reservation found
+end
+
+controllersRes -> client --: 200 { success, data: reservation }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Reservation - Add
+header Reservation Sequence Diagram
+footer Page %page% of %lastpage%
+title "Reservation - Add (POST)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:reservations" as routerRes
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:reservations" as controllersRes
+participant "<<model>>\n:CoWork" as modelCoWork
+participant "<<model>>\n:Reservation" as modelRes
+database "<<MongoDB>>\n:CoWork" as CoWorkDatabase
+database "<<MongoDB>>\n:Reservation" as ResDatabase
+
+client -> server ++: req.post('/api/v1/coworks/:coworkId/reservations')\nAuthorization: Bearer <token>
+server -> routerRes ++: app.use('/api/v1/coworks/:coworkId/reservations')
+routerRes -> middlewareProtect ++: protect()
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerRes --: next()
+routerRes -> controllersRes ++: addReservation()
+
+controllersRes -> modelCoWork ++: findById(coworkId)
+modelCoWork -> CoWorkDatabase ++: CoWorkSchema
+CoWorkDatabase --> modelCoWork --: cowork
+controllersRes <-- modelCoWork --: cowork
+
+alt cowork not found
+    controllersRes -> client: 404 No cowork found
+end
+
+controllersRes -> modelRes ++: find({ user: req.user.id, status: 'active' })
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: existedReservations
+controllersRes <-- modelRes --: existedReservations
+
+alt existedReservations >= 3 && role != 'admin'
+    controllersRes -> client: 400 Already made 3 reservations
+end
+
+controllersRes -> modelRes ++: create(req.body)
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: reservation
+controllersRes <-- modelRes --: reservation
+controllersRes -> client --: 200 { success, data: reservation }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Reservation - Update
+header Reservation Sequence Diagram
+footer Page %page% of %lastpage%
+title "Reservation - Update (PUT)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:reservations" as routerRes
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:reservations" as controllersRes
+participant "<<model>>\n:Reservation" as modelRes
+database "<<MongoDB>>\n:Reservation" as ResDatabase
+
+client -> server ++: req.put('/api/v1/reservations/:id')\nAuthorization: Bearer <token>
+server -> routerRes ++: app.use('/api/v1/reservations', reservations)
+routerRes -> middlewareProtect ++: protect()
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerRes --: next()
+routerRes -> controllersRes ++: updateReservation()
+controllersRes -> modelRes ++: findById(req.params.id)
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: reservation
+controllersRes <-- modelRes --: reservation
+
+alt reservation not found
+    controllersRes -> client: 404 No reservation found
+end
+
+alt user != owner && role != 'admin'
+    controllersRes -> client: 401 Not authorized
+end
+
+alt status == 'cancelled'
+    controllersRes -> client: 400 Cannot update cancelled reservation
+end
+
+controllersRes -> modelRes ++: findByIdAndUpdate(id, req.body)
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: updatedReservation
+controllersRes <-- modelRes --: updatedReservation
+controllersRes -> client --: 200 { success, data: updatedReservation }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Reservation - Delete
+header Reservation Sequence Diagram
+footer Page %page% of %lastpage%
+title "Reservation - Delete (DELETE)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:reservations" as routerRes
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:reservations" as controllersRes
+participant "<<model>>\n:Reservation" as modelRes
+database "<<MongoDB>>\n:Reservation" as ResDatabase
+
+client -> server ++: req.delete('/api/v1/reservations/:id')\nAuthorization: Bearer <token>
+server -> routerRes ++: app.use('/api/v1/reservations', reservations)
+routerRes -> middlewareProtect ++: protect()
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerRes --: next()
+routerRes -> controllersRes ++: deleteReservation()
+controllersRes -> modelRes ++: findById(req.params.id)
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: reservation
+controllersRes <-- modelRes --: reservation
+
+alt reservation not found
+    controllersRes -> client: 404 No reservation found
+end
+
+alt user != owner && role != 'admin'
+    controllersRes -> client: 401 Not authorized
+end
+
+controllersRes -> modelRes ++: deleteOne()
+modelRes -> ResDatabase ++: delete document
+ResDatabase --> modelRes --: ok
+controllersRes <-- modelRes --: ok
+controllersRes -> client --: 200 { success, data: {} }
+
+@enduml
+
+' ─────────────────────────────────────────────────────────────
+
+@startuml Reservation - Cancel
+header Reservation Sequence Diagram
+footer Page %page% of %lastpage%
+title "Reservation - Cancel (PUT)"
+
+participant "Client" as client
+participant "<<javaScript>>\n:server" as server
+participant "<<router>>\n:reservations" as routerRes
+participant "<<middleware>>\n:protect" as middlewareProtect
+participant "<<controllers>>\n:reservations" as controllersRes
+participant "<<model>>\n:Reservation" as modelRes
+database "<<MongoDB>>\n:Reservation" as ResDatabase
+
+client -> server ++: req.put('/api/v1/reservations/:id/cancel')\nAuthorization: Bearer <token>
+server -> routerRes ++: app.use('/api/v1/reservations', reservations)
+routerRes -> middlewareProtect ++: protect()
+
+alt token missing or invalid
+    middlewareProtect -> client: 401 Not authorized
+end
+
+middlewareProtect -> routerRes --: next()
+routerRes -> controllersRes ++: cancelReservation()
+controllersRes -> modelRes ++: findById(req.params.id)
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: reservation
+controllersRes <-- modelRes --: reservation
+
+alt reservation not found
+    controllersRes -> client: 404 Reservation not found
+end
+
+alt user != owner && role != 'admin'
+    controllersRes -> client: 401 Not authorized
+end
+
+alt status == 'cancelled'
+    controllersRes -> client: 400 Already cancelled
+end
+
+controllersRes -> modelRes ++: reservation.status = 'cancelled'\nsave()
+modelRes -> ResDatabase ++: ReservationSchema
+ResDatabase --> modelRes --: reservation
+controllersRes <-- modelRes --: reservation
+controllersRes -> client --: 200 { success, data: reservation }
+
+@enduml

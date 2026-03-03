@@ -11,7 +11,7 @@ router.post('/register',register);
 router.post('/login',login);
 router.get('/me',protect,getMe);
 router.get('/logout',protect, logout);
-router.put('/updateme', protect, updateMe);
+router.put('/updateme',protect,updateMe);
 
 
 module.exports=router;

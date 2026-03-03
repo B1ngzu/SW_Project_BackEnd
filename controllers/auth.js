@@ -109,7 +109,8 @@ exports.logout = async (req, res, next) => {
 //@route    PUT /api/v1/auth/updateme
 //@access   Private
 exports.updateMe = async (req, res, next) => {
-    // อนุญาตให้อัพเดตแค่ name กับ tel เท่านั้น
+    
+    
     const fieldsToUpdate = {
         name: req.body.name,
         tel: req.body.tel
@@ -119,17 +120,28 @@ exports.updateMe = async (req, res, next) => {
         key => fieldsToUpdate[key] === undefined && delete fieldsToUpdate[key]
     );
 
-    try {
-        const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
-            new: true,           // return ค่าใหม่หลัง update
-            runValidators: true  // validate schema
+    try{
+        const user = await User.findByIdAndUpdate(req.user.id,fieldsToUpdate,{
+            new:true,
+            runValidators:true
         });
 
         res.status(200).json({
-            success: true,
-            data: user
+            success:true,
+            data:user
         });
-    } catch (err) {
-        res.status(400).json({ success: false, message: err.message });
+
+    }catch(err){
+        res.status(400).json({success:false,message:err.message});
     }
+
+
+
+
+
+  
+
+
+
+
 };
