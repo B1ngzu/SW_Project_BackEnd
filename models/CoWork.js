@@ -28,6 +28,10 @@ const CoWorkSchema = new mongoose.Schema({
     tel:{
         type: String
     },
+    picture:{
+        type: String,
+        required: [true, 'Please add a Picture']
+    },
     opentime:{
         type: String,
         required: [true, 'Please add an open time'],

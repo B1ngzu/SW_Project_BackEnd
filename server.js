@@ -2,12 +2,15 @@ const { setServers } = require("node:dns/promises");
 setServers(["1.1.1.1", "8.8.8.8"]);
 const express = require('express');
 const dotenv = require('dotenv');
+const cors = require('cors');
 
 //Load env vars
 dotenv.config({path:'./config/config.env'});
 
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
+
+
 
 //route file
 const coworks = require('./routes/coworks');
@@ -24,6 +27,8 @@ connectDB();
 const app=express();
 
 app.set('query parser','extended')
+
+app.use(cors());
 
 //Body parser
 app.use(express.json());
